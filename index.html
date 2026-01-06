@@ -49,9 +49,28 @@
       // 4) JSON config file (works in static hosts like Vercel)
       try{
         const r = await fetch('./firebase-config.json', { cache:'no-store' });
-        if(r.ok){ const json = await r.json(); if(json?.apiKey) return json; }
-      }catch(_){ }
+        if(r.ok){
+          // Some hosts rewrite unknown paths to index.html (HTML 200). Guard against that.
+          const ct = (r.headers.get('content-type') || '').toLowerCase();
+          const text = await r.text();
+          const trimmed = (text || '').trimStart();
+          const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+          const isJsonCt = ct.includes('application/json') || ct.includes('+json');
+          if(looksLikeJson || isJsonCt){
+            try{
+              const json = JSON.parse(text);
+              if(json?.apiKey) return json;
+              console.warn('[Firebase] firebase-config.json cargó pero no tiene apiKey. Ignorando.', json);
+            }catch(e){
+              console.warn('[Firebase] firebase-config.json no es JSON válido. Ignorando.', e?.message || e);
+            }
+          } else {
+            console.warn('[Firebase] ./firebase-config.json no devolvió JSON (posible rewrite a index.html). Ignorando. Content-Type:', ct);
+          }
+        }
+      }catch(e){ console.warn('[Firebase] No se pudo leer ./firebase-config.json. Ignorando.', e?.message || e); }
       // 5) Fallback default (demo)
+      console.warn('[Firebase] Usando DEFAULT_CONFIG (demo). Para producción, publica firebase-config.json en la raíz del sitio.');
       return DEFAULT_CONFIG;
     }
     const firebaseConfig = await loadFirebaseConfig();
@@ -10911,7 +10930,7 @@
       }catch(err){
         console.warn('login', err);
         const code = err?.code||'';
-        if(code==='auth/operation-not-allowed'){
+        if(code==='auth/operation-not-allowed' || code==='auth/unauthorized-domain'){
           alert(`Inicio de sesión deshabilitado o dominio no autorizado. En Firebase Console → Authentication:
 1) Sign-in method: habilita Email/Password
 2) Settings → Authorized domains: agrega "${location.hostname}"`);
@@ -10922,7 +10941,7 @@
         } else if(code==='auth/network-request-failed'){
           alert('Fallo de red. Revisa tu conexión a Internet.');
         } else {
-          alert('No se pudo iniciar sesión: '+(err?.message||''));
+          alert('No se pudo iniciar sesión ('+code+'): '+(err?.message||''));
         }
       }
     });
@@ -10960,7 +10979,7 @@
       }catch(err){
         console.warn('signup', err);
         const code = err?.code||'';
-        if(code==='auth/operation-not-allowed'){
+        if(code==='auth/operation-not-allowed' || code==='auth/unauthorized-domain'){
           alert(`Proveedor deshabilitado o dominio no autorizado. En Firebase Console → Authentication:
 1) Sign-in method: habilita Email/Password
 2) Settings → Authorized domains: agrega "${location.hostname}"`);
@@ -10971,7 +10990,7 @@
         } else if(code==='auth/network-request-failed'){
           alert('Fallo de red. Revisa tu conexión a Internet.');
         } else {
-          alert('No se pudo crear la cuenta: '+(err?.message||''));
+          alert('No se pudo crear la cuenta ('+code+'): '+(err?.message||''));
         }
       }
     });
@@ -10999,12 +11018,12 @@
           alert('No existe una cuenta con ese email.');
         } else if(code==='auth/network-request-failed'){
           alert('Fallo de red. Revisa tu conexión a Internet.');
-        } else if(code==='auth/operation-not-allowed'){
+        } else if(code==='auth/operation-not-allowed' || code==='auth/unauthorized-domain'){
           alert(`Recuperación deshabilitada o dominio no autorizado. En Firebase Console → Authentication:
 1) Sign-in method: habilita Email/Password
 2) Settings → Authorized domains: agrega "${location.hostname}"`);
         } else {
-          alert('No se pudo enviar el correo de recuperación: '+(err?.message||''));
+          alert('No se pudo enviar el correo de recuperación ('+code+'): '+(err?.message||''));
         }
       }
     });
